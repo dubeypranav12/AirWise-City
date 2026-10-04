@@ -1,0 +1,176 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>AirWise City - AQI forecasting for Ghaziabad / Delhi NCR</title>
+  <!-- Leaflet (map). If it cannot load, the page shows a simple offline zone plot instead. -->
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.css" />
+  <link rel="stylesheet" href="css/style.css" />
+</head>
+<body>
+  <!-- ============ TOP BAR ============ -->
+  <header class="topbar">
+    <div class="brand"><span class="logo">&#127787;</span> AirWise <b>City</b></div>
+    <nav class="nav">
+      <a href="#overview">Overview</a><a href="#forecast">Forecast</a><a href="#map-section">Map</a>
+      <a href="#advisor">Health</a><a href="#authority">Authority</a><a href="#about">About</a>
+    </nav>
+    <div class="controls">
+      <div class="seg" id="modeBtns" title="Live = Open-Meteo API, Cached = last data, Demo = replayed event">
+        <button data-mode="Live">Live</button><button data-mode="Cached">Cached</button><button data-mode="Demo" class="active">Demo</button>
+      </div>
+      <select id="scenario" title="Demo scenario">
+        <option value="normal">Normal day</option>
+        <option value="moderate_to_poor" selected>Moderate &rarr; Poor</option>
+        <option value="severe">Severe event</option>
+      </select>
+      <select id="zoneSelect" title="Zone"></select>
+      <button id="refreshBtn" class="btn ghost" title="Reload data">&#8635;</button>
+    </div>
+  </header>
+  <div class="status" id="statusLine"></div>
+
+  <main>
+    <!-- ============ OVERVIEW ============ -->
+    <section id="overview" class="hero">
+      <div class="card gauge-card">
+        <div class="gauge">
+          <svg viewBox="0 0 200 200">
+            <circle class="g-track" cx="100" cy="100" r="84" />
+            <circle class="g-arc" id="gaugeArc" cx="100" cy="100" r="84" />
+          </svg>
+          <div class="g-center"><div class="g-num" id="gaugeNum">--</div><div class="g-label">AQI</div></div>
+        </div>
+        <div class="gauge-info">
+          <div class="muted" id="ovZone">Zone</div>
+          <div class="pill big" id="gaugeCat">--</div>
+          <div class="kv"><span>Dominant pollutant</span><b id="ovDominant">--</b></div>
+          <div class="kv"><span>Last data hour</span><b id="ovUpdated">--</b></div>
+          <div class="kv"><span>6-hour forecast</span><b id="ovForecast">--</b></div>
+        </div>
+      </div>
+      <div class="hero-side">
+        <div id="ovBanner" class="banner hidden"></div>
+        <h3>Pollutants</h3>
+        <div class="grid six" id="pollGrid"></div>
+        <h3>Weather</h3>
+        <div class="grid three" id="wxGrid"></div>
+      </div>
+    </section>
+
+    <!-- ============ FORECAST ============ -->
+    <section id="forecast">
+      <h2>AQI forecast <small id="fcZone"></small></h2>
+      <div class="grid four" id="fcCards"></div>
+      <div class="card chart-card">
+        <div class="chart-wrap"><canvas id="fcChart"></canvas><div id="chartTip" class="tip"></div></div>
+        <div class="legend"><span><i class="ln solid"></i>Observed</span><span><i class="ln dash"></i>Forecast</span><span><i class="box"></i>Likely range (80%)</span></div>
+      </div>
+      <div class="two">
+        <div class="card"><h3>Why is AQI expected to change?</h3><ul id="fcReasons" class="list"></ul>
+          <p class="fine">Statistical contributing factors from recent data - not proof of the actual pollution source.</p></div>
+        <div class="card"><h3>About this forecast</h3><div id="fcModelNote" class="fine"></div></div>
+      </div>
+    </section>
+
+    <!-- ============ MAP ============ -->
+    <section id="map-section">
+      <h2>Pollution hotspot map</h2>
+      <div class="toolbar">
+        <div class="seg" id="metricBtns"><button data-metric="current" class="active">Current AQI</button><button data-metric="pred6">6-hour forecast</button></div>
+        <div class="legend-cats" id="catLegend"></div>
+      </div>
+      <div class="two map-two">
+        <div class="card map-card"><div id="map"></div></div>
+        <div class="card"><div class="table-wrap"><table class="tbl" id="zoneTable">
+          <thead><tr><th>Zone</th><th>Now</th><th>6 h</th><th>Trend</th></tr></thead><tbody></tbody></table></div>
+          <div id="mapDetail" class="map-detail"></div></div>
+      </div>
+    </section>
+
+    <!-- ============ HEALTH ADVISOR ============ -->
+    <section id="advisor">
+      <h2>Citizen health advisor</h2>
+      <div class="card">
+        <div class="adv-top">
+          <div><div class="muted">Who is this advice for?</div><div class="chips" id="profileChips"></div></div>
+          <div><div class="muted">Plan for</div>
+            <select id="whenSel"><option value="0">Now</option><option value="6" selected>In 6 hours</option><option value="12">In 12 hours</option><option value="24">In 24 hours</option></select></div>
+        </div>
+        <div class="adv-body">
+          <div class="adv-aqi"><div class="big-num" id="advAqi">--</div><div class="pill" id="advCat">--</div></div>
+          <ul class="list" id="advList"></ul>
+        </div>
+        <p class="fine" id="advDisclaimer"></p>
+      </div>
+    </section>
+
+    <!-- ============ AUTHORITY ============ -->
+    <section id="authority">
+      <h2>Authority console <small>decision support only - never enforces</small></h2>
+      <div id="worseBanner" class="banner hidden"></div>
+      <div class="card"><h3>Highest-risk zones</h3>
+        <div class="table-wrap"><table class="tbl" id="riskTable"><thead><tr>
+          <th>Zone</th><th>Now</th><th>6 h</th><th>Category (6 h)</th><th>Dominant</th><th>Change</th><th>Expected peak</th><th>P(Poor+)</th><th>Citizens potentially affected</th>
+        </tr></thead><tbody id="riskBody"></tbody></table></div>
+        <p class="fine">Population figures are rough planning assumptions, not census data.</p>
+        <button class="btn" id="csvBtn">&#11015; Download report (CSV)</button>
+      </div>
+      <h3>Recommended interventions (top 3 zones)</h3>
+      <div class="grid three" id="actionCards"></div>
+
+      <div class="two">
+        <div class="card"><h3>Smart alerts</h3>
+          <label class="field">Alert when 6-hour forecast crosses <b id="alertThrVal">200</b>
+            <input type="range" id="alertThr" min="100" max="400" step="50" value="200" /></label>
+          <label class="field">Zone <select id="alertZone"></select></label>
+          <pre id="alertMsg" class="msg"></pre>
+          <div class="row"><button class="btn" id="alertBtn">Send alert</button><button class="btn ghost" id="notifyBtn">Enable browser notifications</button></div>
+          <p class="fine">Alerts show on screen, are saved in this browser, and use browser notifications if enabled. Telegram needs a small backend so the bot token stays secret (see README).</p>
+          <ul class="list small" id="alertHist"></ul>
+        </div>
+        <div class="card"><h3>Policy scenario simulator <small>stretch feature</small></h3>
+          <label class="field">Zone <select id="simZone"></select></label>
+          <label class="field">Reduce traffic emissions <b id="simTv">0%</b><input type="range" id="simT" min="0" max="30" value="0" /></label>
+          <label class="field">Improve construction dust control <b id="simDv">0%</b><input type="range" id="simD" min="0" max="50" value="0" /></label>
+          <label class="field">Reduce waste-burning events <b id="simBv">0%</b><input type="range" id="simB" min="0" max="50" value="0" /></label>
+          <div class="grid three sim-out">
+            <div class="stat"><span>Baseline AQI (now)</span><b id="simBase">--</b></div>
+            <div class="stat"><span>Scenario AQI</span><b id="simScen">--</b></div>
+            <div class="stat"><span>Estimated improvement</span><b id="simGain">--</b></div>
+          </div>
+          <p class="fine">Scenario estimate, not a guaranteed real-world outcome. Assumed PM source shares: traffic 35%, construction dust 25%, waste burning 15%.</p>
+        </div>
+      </div>
+    </section>
+
+    <!-- ============ ABOUT ============ -->
+    <section id="about">
+      <h2>About &amp; honest limitations</h2>
+      <div class="card"><ul class="list">
+        <li>AQI uses India's CPCB categories (Good 0-50 ... Severe 401-500). Values are an <b>hourly estimate</b>; official CPCB values use 24-hour/8-hour averages.</li>
+        <li>Live data comes from Open-Meteo (model/analysis based), <b>not</b> ground-sensor readings.</li>
+        <li>The forecast is a Linear Regression trained in Python and run in your browser. See the model note above for its tested error against a "same as now" baseline.</li>
+        <li>"Reasons" are contributing factors, not proven pollution sources. The simulator uses assumed source shares.</li>
+        <li>Health advice is general information, not medical advice.</li>
+      </ul></div>
+    </section>
+  </main>
+  <footer>AirWise City &middot; pilot: Ghaziabad / Delhi NCR &middot; data: Open-Meteo &middot; map: OpenStreetMap, CARTO</footer>
+  <div id="toast" class="toast"></div>
+
+  <!-- Data files (generated by Python) first, then our JavaScript. Order matters! -->
+  <script src="data/config.js"></script>
+  <script src="data/cached.js"></script>
+  <script src="data/demo.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.js"></script>
+  <script src="js/aqi.js"></script>
+  <script src="js/forecast.js"></script>
+  <script src="js/advice.js"></script>
+  <script src="js/data.js"></script>
+  <script src="js/charts.js"></script>
+  <script src="js/map.js"></script>
+  <script src="js/app.js"></script>
+</body>
+</html>
